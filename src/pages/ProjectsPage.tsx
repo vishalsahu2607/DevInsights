@@ -54,7 +54,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
 
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold text-xs shadow-md transition-all self-start sm:self-auto"
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-linear-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-semibold text-xs shadow-md transition-all self-start sm:self-auto"
         >
           <Plus className="w-4 h-4" />
           <span>New Project Workspace</span>
@@ -169,7 +169,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold"
+                  className="px-4 py-2 rounded-xl bg-linear-to-r from-cyan-600 to-blue-600 text-white font-bold"
                 >
                   Create Workspace
                 </button>
