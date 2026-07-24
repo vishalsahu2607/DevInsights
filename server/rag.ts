@@ -278,7 +278,11 @@ ${contextText}
   const ai = getAIClient();
 
   if (ai && process.env.GEMINI_API_KEY) {
-    const primaryModel = settings.model_name || 'gemma-4';
+    const rawModel = settings.model_name || '';
+    const primaryModel =
+      rawModel && !rawModel.includes('gemma') && !rawModel.includes('3.6')
+        ? rawModel
+        : 'gemini-2.5-flash';
     try {
       const response = await ai.models.generateContent({
         model: primaryModel,

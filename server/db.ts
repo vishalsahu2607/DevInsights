@@ -44,7 +44,7 @@ let dbState: DBState = {
   chatSessions: [...INITIAL_CHAT_SESSIONS],
   chunks: [],
   settings: {
-    model_name: process.env.GEMMA_MODEL_NAME || 'gemma-4',
+    model_name: process.env.GEMINI_MODEL_NAME || 'gemini-2.5-flash',
     embedding_model: process.env.EMBEDDING_MODEL_NAME || 'gemini-embedding-2-preview',
     chunk_size: parseInt(process.env.CHUNK_SIZE || '800'),
     chunk_overlap: parseInt(process.env.CHUNK_OVERLAP || '150'),
@@ -70,10 +70,10 @@ export function initDB() {
     } else {
       saveDB();
     }
-    if (!dbState.settings || !dbState.settings.model_name || dbState.settings.model_name.includes('3.6')) {
+    if (!dbState.settings || !dbState.settings.model_name || dbState.settings.model_name.includes('3.6') || dbState.settings.model_name.includes('gemma')) {
       dbState.settings = {
         ...dbState.settings,
-        model_name: 'gemma-4',
+        model_name: 'gemini-2.5-flash',
       };
     }
     // Purge any pre-seeded sample chunks so RAG exclusively searches user uploaded/indexed content

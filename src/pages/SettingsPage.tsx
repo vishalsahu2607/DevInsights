@@ -72,9 +72,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onSettingsUpdated })
               onChange={(e) => setSettings({ ...settings, model_name: e.target.value })}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none focus:border-cyan-500/50 font-mono"
             >
-              <option value="gemma-4">Gemma 4 API (Google Open Model - Default)</option>
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Fastest Multimodal)</option>
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro (Deep Code Reasoning)</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended Default - Fast & Accurate)</option>
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro (Deep Code Analysis & Reasoning)</option>
             </select>
           </div>
         </div>
