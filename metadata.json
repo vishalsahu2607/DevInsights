@@ -1,0 +1,6 @@
+{
+  "name": "DevInsights",
+  "description": "AI-Powered Engineering Intelligence Hub for developer documentation, repository code search, architecture diagrams, and incident reports with RAG citations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
