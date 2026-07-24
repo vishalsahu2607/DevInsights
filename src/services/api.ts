@@ -12,14 +12,22 @@ import {
 
 const API_BASE = '/api';
 
+async function handleResponse<T>(res: Response): Promise<T> {
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `HTTP ${res.status}: ${res.statusText}`);
+  }
+  return res.json();
+}
+
 export async function fetchHealth(): Promise<{ status: string }> {
   const res = await fetch(`${API_BASE}/health`);
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function fetchProjects(): Promise<Project[]> {
   const res = await fetch(`${API_BASE}/projects`);
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function createProject(name: string, description: string): Promise<Project> {
@@ -28,25 +36,28 @@ export async function createProject(name: string, description: string): Promise<
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, description }),
   });
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function deleteProject(id: string): Promise<void> {
-  await fetch(`${API_BASE}/projects/${id}`, { method: 'DELETE' });
+  const res = await fetch(`${API_BASE}/projects/${id}`, { method: 'DELETE' });
+  await handleResponse(res);
 }
 
 export async function fetchResources(projectId?: string): Promise<Resource[]> {
   const url = projectId ? `${API_BASE}/resources?project_id=${projectId}` : `${API_BASE}/resources`;
   const res = await fetch(url);
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function deleteResource(id: string): Promise<void> {
-  await fetch(`${API_BASE}/resources/${id}`, { method: 'DELETE' });
+  const res = await fetch(`${API_BASE}/resources/${id}`, { method: 'DELETE' });
+  await handleResponse(res);
 }
 
 export async function reindexResource(id: string): Promise<void> {
-  await fetch(`${API_BASE}/resources/${id}/reindex`, { method: 'POST' });
+  const res = await fetch(`${API_BASE}/resources/${id}/reindex`, { method: 'POST' });
+  await handleResponse(res);
 }
 
 export async function uploadDocument(formData: FormData): Promise<any> {
@@ -54,7 +65,7 @@ export async function uploadDocument(formData: FormData): Promise<any> {
     method: 'POST',
     body: formData,
   });
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function uploadCodeFile(formData: FormData): Promise<any> {
@@ -62,13 +73,13 @@ export async function uploadCodeFile(formData: FormData): Promise<any> {
     method: 'POST',
     body: formData,
   });
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function fetchRepositories(projectId?: string): Promise<Repository[]> {
   const url = projectId ? `${API_BASE}/repositories?project_id=${projectId}` : `${API_BASE}/repositories`;
   const res = await fetch(url);
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function addGithubRepository(
@@ -82,7 +93,7 @@ export async function addGithubRepository(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ project_id: projectId, repository_url: repositoryUrl, name, branch }),
   });
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function uploadRepositoryZip(formData: FormData): Promise<Repository> {
@@ -90,22 +101,23 @@ export async function uploadRepositoryZip(formData: FormData): Promise<Repositor
     method: 'POST',
     body: formData,
   });
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function deleteRepository(id: string): Promise<void> {
-  await fetch(`${API_BASE}/repositories/${id}`, { method: 'DELETE' });
+  const res = await fetch(`${API_BASE}/repositories/${id}`, { method: 'DELETE' });
+  await handleResponse(res);
 }
 
 export async function fetchChatSessions(projectId?: string): Promise<ChatSession[]> {
   const url = projectId ? `${API_BASE}/chat/sessions?project_id=${projectId}` : `${API_BASE}/chat/sessions`;
   const res = await fetch(url);
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function fetchChatSessionById(id: string): Promise<ChatSession> {
   const res = await fetch(`${API_BASE}/chat/sessions/${id}`);
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function createChatSession(projectId: string, title?: string): Promise<ChatSession> {
@@ -114,11 +126,12 @@ export async function createChatSession(projectId: string, title?: string): Prom
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ project_id: projectId, title }),
   });
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function deleteChatSession(id: string): Promise<void> {
-  await fetch(`${API_BASE}/chat/sessions/${id}`, { method: 'DELETE' });
+  const res = await fetch(`${API_BASE}/chat/sessions/${id}`, { method: 'DELETE' });
+  await handleResponse(res);
 }
 
 export async function sendChatMessage(
@@ -139,7 +152,7 @@ export async function sendChatMessage(
       file_path_filter: filePathFilter,
     }),
   });
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function searchRAG(
@@ -158,7 +171,7 @@ export async function searchRAG(
       top_k: topK,
     }),
   });
-  return res.json();
+  return handleResponse(res);
 }
 
 export async function fetchIncidents(projectId?: string): Promise<Incident[]> {

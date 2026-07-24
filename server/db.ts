@@ -75,6 +75,7 @@ export function initDB() {
         ...dbState.settings,
         model_name: 'gemini-2.5-flash',
       };
+      saveDB();
     }
     // Purge any pre-seeded sample chunks so RAG exclusively searches user uploaded/indexed content
     const sampleIds = new Set(RAW_SAMPLE_CHUNKS.map((c) => c.id));
@@ -139,14 +140,38 @@ export function getProjectById(id: string): Project | undefined {
 }
 
 export function addProject(name: string, description: string): Project {
+  const cleanName = name.trim();
+  const cleanDesc = description ? description.trim() : '';
+  const now = new Date().toISOString();
   const newProj: Project = {
     id: `proj-${Date.now()}`,
-    name,
-    description,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    name: cleanName,
+    description: cleanDesc,
+    created_at: now,
+    updated_at: now,
   };
   dbState.projects.push(newProj);
+
+  // Initialize initial welcome chat session for this workspace
+  const defaultSession: ChatSession = {
+    id: `session-${Date.now()}`,
+    project_id: newProj.id,
+    title: `${cleanName} Workspace`,
+    messages: [
+      {
+        id: `msg-${Date.now()}`,
+        session_id: `session-${Date.now()}`,
+        role: 'assistant',
+        content: `Welcome to **${cleanName}**! Workspace initialized successfully. You can now upload codebase archives, link GitHub repositories, or add architectural documentation to perform precise RAG queries across this project.`,
+        sources: [],
+        created_at: now,
+      },
+    ],
+    created_at: now,
+    updated_at: now,
+  };
+  dbState.chatSessions.push(defaultSession);
+
   saveDB();
   return newProj;
 }

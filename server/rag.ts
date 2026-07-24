@@ -444,6 +444,10 @@ export async function processAndIndexZip(
       const entryPath = entry.entryName;
       const fileName = entryPath.split('/').pop() || '';
 
+      // Normalize entryPath to remove root folder name if present (e.g. repo-main/src/App.tsx -> src/App.tsx)
+      const pathParts = entryPath.split('/').filter(Boolean);
+      const cleanRelativePath = pathParts.length > 1 ? pathParts.slice(1).join('/') : entryPath;
+
       // Skip heavy or auto-generated directories
       if (
         entryPath.includes('node_modules/') ||
@@ -473,7 +477,7 @@ export async function processAndIndexZip(
       const result = await processAndIndexFile(
         projectId,
         fileName,
-        entryPath,
+        cleanRelativePath || entryPath,
         sourceType,
         fileContent,
         category
@@ -498,18 +502,26 @@ export async function processAndIndexGitHubRepo(
   repoUrl: string,
   branch: string = 'main'
 ): Promise<{ indexedFileCount: number; totalChunks: number; repoName: string }> {
-  const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
-  if (!match) {
-    throw new Error('Invalid GitHub repository URL format');
+  const cleanUrl = repoUrl.trim().replace(/\.git\/?$/i, '').replace(/\/$/, '');
+  const urlParts = cleanUrl.split('github.com/')[1];
+  if (!urlParts) {
+    throw new Error('Invalid GitHub repository URL format. Use https://github.com/owner/repository');
   }
 
-  const owner = match[1];
-  const repoName = match[2].replace(/\.git$/, '');
+  const parts = urlParts.split('/').filter(Boolean);
+  if (parts.length < 2) {
+    throw new Error('Invalid GitHub repository URL format. Must include owner and repository name');
+  }
+
+  const owner = parts[0];
+  const repoName = parts[1].replace(/\.git$/i, '');
+  const targetBranch = (parts[2] === 'tree' && parts[3]) ? parts[3] : branch;
 
   const zipUrls = [
-    `https://codeload.github.com/${owner}/${repoName}/zip/refs/heads/${branch}`,
+    `https://codeload.github.com/${owner}/${repoName}/zip/refs/heads/${targetBranch}`,
+    `https://codeload.github.com/${owner}/${repoName}/zip/refs/heads/main`,
     `https://codeload.github.com/${owner}/${repoName}/zip/refs/heads/master`,
-    `https://api.github.com/repos/${owner}/${repoName}/zipball/${branch}`,
+    `https://api.github.com/repos/${owner}/${repoName}/zipball/${targetBranch}`,
   ];
 
   for (const zipUrl of zipUrls) {
