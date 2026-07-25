@@ -259,7 +259,7 @@ export const IncidentsPage: React.FC<IncidentsPageProps> = ({
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-rose-600 text-white font-bold flex items-center gap-2"
+                  className="px-4 py-2 rounded-xl bg-linear-to-r from-amber-600 to-rose-600 text-white font-bold flex items-center gap-2"
                 >
                   {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Log & Index Incident'}
                 </button>

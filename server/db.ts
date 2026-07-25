@@ -1,6 +1,6 @@
-import fs from 'fs';
-import path from 'path';
-import {
+import { randomUUID } from "node:crypto";
+import { loadState, saveState } from "./stateStore.js";
+import type {
   Project,
   Resource,
   Repository,
@@ -10,7 +10,7 @@ import {
   ChatMessage,
   VectorChunk,
   RAGSettings,
-} from '../src/types.js';
+} from "../src/types.js";
 import {
   DEFAULT_PROJECT,
   SAMPLE_RESOURCES,
@@ -19,7 +19,7 @@ import {
   SAMPLE_DIAGRAMS,
   RAW_SAMPLE_CHUNKS,
   INITIAL_CHAT_SESSIONS,
-} from './seedData.js';
+} from "./seedData.js";
 
 interface DBState {
   projects: Project[];
@@ -32,84 +32,62 @@ interface DBState {
   settings: RAGSettings;
 }
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
+const STATE_ID = "devinsights-main";
 
-let dbState: DBState = {
-  projects: [DEFAULT_PROJECT],
-  resources: [...SAMPLE_RESOURCES],
-  repositories: [...SAMPLE_REPOSITORIES],
-  incidents: [...SAMPLE_INCIDENTS],
-  diagrams: [...SAMPLE_DIAGRAMS],
-  chatSessions: [...INITIAL_CHAT_SESSIONS],
-  chunks: [],
-  settings: {
-    model_name: process.env.GEMINI_MODEL_NAME || 'gemini-2.5-flash',
-    embedding_model: process.env.EMBEDDING_MODEL_NAME || 'gemini-embedding-2-preview',
-    chunk_size: parseInt(process.env.CHUNK_SIZE || '800'),
-    chunk_overlap: parseInt(process.env.CHUNK_OVERLAP || '150'),
-    top_k: parseInt(process.env.TOP_K || '5'),
-    theme: 'dark',
-    api_url: process.env.APP_URL || 'http://localhost:3000/api',
-  },
-};
+function getEnvironmentNumber(
+  value: string | undefined,
+  fallback: number,
+): number {
+  const parsed = Number.parseInt(value || "", 10);
 
-export function initDB() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    if (fs.existsSync(DB_FILE)) {
-      const data = fs.readFileSync(DB_FILE, 'utf-8');
-      const loaded = JSON.parse(data);
-      if (loaded.projects && loaded.projects.length > 0) {
-        dbState = { ...dbState, ...loaded };
-      } else {
-        saveDB();
-      }
-    } else {
-      saveDB();
-    }
-    if (!dbState.settings || !dbState.settings.model_name || dbState.settings.model_name.includes('3.6') || dbState.settings.model_name.includes('gemma')) {
-      dbState.settings = {
-        ...dbState.settings,
-        model_name: 'gemini-2.5-flash',
-      };
-      saveDB();
-    }
-    // Purge any pre-seeded sample chunks so RAG exclusively searches user uploaded/indexed content
-    const sampleIds = new Set(RAW_SAMPLE_CHUNKS.map((c) => c.id));
-    dbState.chunks = (dbState.chunks || []).filter(
-      (c) =>
-        !sampleIds.has(c.id) &&
-        !c.id.startsWith('chunk-auth-') &&
-        !c.id.startsWith('chunk-pay-') &&
-        !c.id.startsWith('chunk-check-') &&
-        !c.id.startsWith('chunk-inc-') &&
-        !c.id.startsWith('chunk-diag-') &&
-        !c.id.startsWith('chunk-arch-')
-    );
-    saveDB();
-  } catch (err) {
-    console.error('Failed to load db.json:', err);
-    dbState.chunks = [];
-    saveDB();
-  }
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-export function saveDB() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    fs.writeFileSync(DB_FILE, JSON.stringify(dbState, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Failed to write db.json:', err);
-  }
+function createDefaultSettings(): RAGSettings {
+  return {
+    model_name:
+      process.env.GEMINI_MODEL_NAME || "gemini-2.5-flash",
+
+    embedding_model:
+      process.env.EMBEDDING_MODEL_NAME ||
+      "gemini-embedding-2-preview",
+
+    chunk_size: getEnvironmentNumber(
+      process.env.CHUNK_SIZE,
+      800,
+    ),
+
+    chunk_overlap: getEnvironmentNumber(
+      process.env.CHUNK_OVERLAP,
+      150,
+    ),
+
+    top_k: getEnvironmentNumber(
+      process.env.TOP_K,
+      5,
+    ),
+
+    theme: "dark",
+
+    api_url: process.env.APP_URL || "/api",
+  };
 }
 
-export function resetDB() {
-  dbState = {
+function createInitialState(): DBState {
+  return {
+    projects: [DEFAULT_PROJECT],
+    resources: [...SAMPLE_RESOURCES],
+    repositories: [...SAMPLE_REPOSITORIES],
+    incidents: [...SAMPLE_INCIDENTS],
+    diagrams: [...SAMPLE_DIAGRAMS],
+    chatSessions: [...INITIAL_CHAT_SESSIONS],
+    chunks: [],
+    settings: createDefaultSettings(),
+  };
+}
+
+function createResetState(): DBState {
+  return {
     projects: [DEFAULT_PROJECT],
     resources: [],
     repositories: [],
@@ -117,51 +95,156 @@ export function resetDB() {
     diagrams: [],
     chatSessions: [...INITIAL_CHAT_SESSIONS],
     chunks: [],
+    settings: createDefaultSettings(),
+  };
+}
+
+let dbState: DBState = createInitialState();
+
+function copyValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function removeSeedChunks(chunks: VectorChunk[]): VectorChunk[] {
+  const sampleIds = new Set(RAW_SAMPLE_CHUNKS.map((chunk) => chunk.id));
+
+  return chunks.filter(
+    (chunk) =>
+      !sampleIds.has(chunk.id) &&
+      !chunk.id.startsWith("chunk-auth-") &&
+      !chunk.id.startsWith("chunk-pay-") &&
+      !chunk.id.startsWith("chunk-check-") &&
+      !chunk.id.startsWith("chunk-inc-") &&
+      !chunk.id.startsWith("chunk-diag-") &&
+      !chunk.id.startsWith("chunk-arch-"),
+  );
+}
+
+function normalizeState(savedState: DBState): DBState {
+  const defaults = createInitialState();
+  const savedSettings = savedState.settings || defaults.settings;
+  const savedModelName = savedSettings.model_name || defaults.settings.model_name;
+
+  const shouldReplaceModel =
+    savedModelName.includes("3.6") || savedModelName.includes("gemma");
+
+  return {
+    projects: Array.isArray(savedState.projects)
+      ? savedState.projects
+      : defaults.projects,
+    resources: Array.isArray(savedState.resources)
+      ? savedState.resources
+      : defaults.resources,
+    repositories: Array.isArray(savedState.repositories)
+      ? savedState.repositories
+      : defaults.repositories,
+    incidents: Array.isArray(savedState.incidents)
+      ? savedState.incidents
+      : defaults.incidents,
+    diagrams: Array.isArray(savedState.diagrams)
+      ? savedState.diagrams
+      : defaults.diagrams,
+    chatSessions: Array.isArray(savedState.chatSessions)
+      ? savedState.chatSessions
+      : defaults.chatSessions,
+    chunks: removeSeedChunks(
+      Array.isArray(savedState.chunks) ? savedState.chunks : [],
+    ),
     settings: {
-      model_name: process.env.GEMMA_MODEL_NAME || 'gemini-2.5-flash',
-      embedding_model: process.env.EMBEDDING_MODEL_NAME || 'gemini-embedding-2-preview',
-      chunk_size: parseInt(process.env.CHUNK_SIZE || '800'),
-      chunk_overlap: parseInt(process.env.CHUNK_OVERLAP || '150'),
-      top_k: parseInt(process.env.TOP_K || '5'),
-      theme: 'dark',
-      api_url: process.env.APP_URL || 'http://localhost:3000/api',
+      ...defaults.settings,
+      ...savedSettings,
+      model_name: shouldReplaceModel
+        ? defaults.settings.model_name
+        : savedModelName,
     },
   };
-  saveDB();
-  return dbState;
 }
 
-export function getProjects(): Project[] {
-  return dbState.projects;
+async function persistDatabase(): Promise<void> {
+  await saveState(STATE_ID, dbState);
 }
 
-export function getProjectById(id: string): Project | undefined {
-  return dbState.projects.find((p) => p.id === id);
+/**
+ * Reads the latest state before every operation. This is safer on Vercel,
+ * where multiple serverless instances may be running independently.
+ */
+async function refreshDatabase(): Promise<void> {
+  const savedState = await loadState<DBState>(STATE_ID);
+
+  if (!savedState) {
+    dbState = createInitialState();
+    await persistDatabase();
+    return;
+  }
+
+  const normalizedState = normalizeState(savedState);
+  const changed =
+    JSON.stringify(normalizedState) !== JSON.stringify(savedState);
+
+  dbState = normalizedState;
+
+  if (changed) {
+    await persistDatabase();
+  }
 }
 
-export function addProject(name: string, description: string): Project {
+export async function initDB(): Promise<void> {
+  await refreshDatabase();
+}
+
+export async function saveDB(): Promise<void> {
+  await persistDatabase();
+}
+
+export async function resetDB(): Promise<DBState> {
+  dbState = createResetState();
+  await persistDatabase();
+  return copyValue(dbState);
+}
+
+export async function getProjects(): Promise<Project[]> {
+  await refreshDatabase();
+  return copyValue(dbState.projects);
+}
+
+export async function getProjectById(
+  id: string,
+): Promise<Project | undefined> {
+  await refreshDatabase();
+  const project = dbState.projects.find((item) => item.id === id);
+  return project ? copyValue(project) : undefined;
+}
+
+export async function addProject(
+  name: string,
+  description: string,
+): Promise<Project> {
+  await refreshDatabase();
+
   const cleanName = name.trim();
-  const cleanDesc = description ? description.trim() : '';
+  const cleanDescription = description ? description.trim() : "";
   const now = new Date().toISOString();
-  const newProj: Project = {
-    id: `proj-${Date.now()}`,
+  const timestamp = Date.now();
+  const projectId = `proj-${randomUUID()}`;
+  const sessionId = `session-${randomUUID()}`;
+
+  const newProject: Project = {
+    id: projectId,
     name: cleanName,
-    description: cleanDesc,
+    description: cleanDescription,
     created_at: now,
     updated_at: now,
   };
-  dbState.projects.push(newProj);
 
-  // Initialize initial welcome chat session for this workspace
   const defaultSession: ChatSession = {
-    id: `session-${Date.now()}`,
-    project_id: newProj.id,
+    id: sessionId,
+    project_id: projectId,
     title: `${cleanName} Workspace`,
     messages: [
       {
-        id: `msg-${Date.now()}`,
-        session_id: `session-${Date.now()}`,
-        role: 'assistant',
+        id: `msg-${timestamp}`,
+        session_id: sessionId,
+        role: "assistant",
         content: `Welcome to **${cleanName}**! Workspace initialized successfully. You can now upload codebase archives, link GitHub repositories, or add architectural documentation to perform precise RAG queries across this project.`,
         sources: [],
         created_at: now,
@@ -170,220 +253,404 @@ export function addProject(name: string, description: string): Project {
     created_at: now,
     updated_at: now,
   };
+
+  dbState.projects.push(newProject);
   dbState.chatSessions.push(defaultSession);
+  await persistDatabase();
 
-  saveDB();
-  return newProj;
+  return copyValue(newProject);
 }
 
-export function updateProject(id: string, name: string, description: string): Project | undefined {
-  const proj = dbState.projects.find((p) => p.id === id);
-  if (proj) {
-    proj.name = name;
-    proj.description = description;
-    proj.updated_at = new Date().toISOString();
-    saveDB();
+export async function updateProject(
+  id: string,
+  name: string,
+  description: string,
+): Promise<Project | undefined> {
+  await refreshDatabase();
+
+  const project = dbState.projects.find((item) => item.id === id);
+
+  if (!project) {
+    return undefined;
   }
-  return proj;
+
+  project.name = name.trim();
+  project.description = description ? description.trim() : "";
+  project.updated_at = new Date().toISOString();
+
+  await persistDatabase();
+  return copyValue(project);
 }
 
-export function deleteProject(id: string): boolean {
-  const initialLen = dbState.projects.length;
-  dbState.projects = dbState.projects.filter((p) => p.id !== id);
-  if (dbState.projects.length < initialLen) {
-    dbState.resources = dbState.resources.filter((r) => r.project_id !== id);
-    dbState.repositories = dbState.repositories.filter((r) => r.project_id !== id);
-    dbState.incidents = dbState.incidents.filter((i) => i.project_id !== id);
-    dbState.diagrams = dbState.diagrams.filter((d) => d.project_id !== id);
-    dbState.chunks = dbState.chunks.filter((c) => c.project_id !== id);
-    saveDB();
-    return true;
+export async function deleteProject(id: string): Promise<boolean> {
+  await refreshDatabase();
+
+  const initialLength = dbState.projects.length;
+  dbState.projects = dbState.projects.filter((project) => project.id !== id);
+
+  const deleted = dbState.projects.length < initialLength;
+
+  if (!deleted) {
+    return false;
   }
-  return false;
+
+  dbState.resources = dbState.resources.filter(
+    (resource) => resource.project_id !== id,
+  );
+  dbState.repositories = dbState.repositories.filter(
+    (repository) => repository.project_id !== id,
+  );
+  dbState.incidents = dbState.incidents.filter(
+    (incident) => incident.project_id !== id,
+  );
+  dbState.diagrams = dbState.diagrams.filter(
+    (diagram) => diagram.project_id !== id,
+  );
+  dbState.chatSessions = dbState.chatSessions.filter(
+    (session) => session.project_id !== id,
+  );
+  dbState.chunks = dbState.chunks.filter((chunk) => chunk.project_id !== id);
+
+  await persistDatabase();
+  return true;
 }
 
-export function getResources(projectId?: string): Resource[] {
-  if (projectId) {
-    return dbState.resources.filter((r) => r.project_id === projectId);
-  }
-  return dbState.resources;
+export async function getResources(projectId?: string): Promise<Resource[]> {
+  await refreshDatabase();
+
+  const resources = projectId
+    ? dbState.resources.filter((resource) => resource.project_id === projectId)
+    : dbState.resources;
+
+  return copyValue(resources);
 }
 
-export function getResourceById(id: string): Resource | undefined {
-  return dbState.resources.find((r) => r.id === id);
+export async function getResourceById(
+  id: string,
+): Promise<Resource | undefined> {
+  await refreshDatabase();
+  const resource = dbState.resources.find((item) => item.id === id);
+  return resource ? copyValue(resource) : undefined;
 }
 
-export function addResource(res: Omit<Resource, 'id' | 'created_at' | 'updated_at'>): Resource {
-  const newRes: Resource = {
-    ...res,
-    id: `res-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+export async function addResource(
+  resource: Omit<Resource, "id" | "created_at" | "updated_at">,
+): Promise<Resource> {
+  await refreshDatabase();
+
+  const now = new Date().toISOString();
+  const newResource: Resource = {
+    ...resource,
+    id: `res-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    created_at: now,
+    updated_at: now,
   };
-  dbState.resources.push(newRes);
-  saveDB();
-  return newRes;
+
+  dbState.resources.push(newResource);
+  await persistDatabase();
+
+  return copyValue(newResource);
 }
 
-export function deleteResource(id: string): boolean {
-  const len = dbState.resources.length;
-  dbState.resources = dbState.resources.filter((r) => r.id !== id);
-  dbState.chunks = dbState.chunks.filter((c) => c.resource_id !== id);
-  saveDB();
-  return dbState.resources.length < len;
-}
+export async function deleteResource(id: string): Promise<boolean> {
+  await refreshDatabase();
 
-export function getRepositories(projectId?: string): Repository[] {
-  if (projectId) {
-    return dbState.repositories.filter((r) => r.project_id === projectId);
+  const initialLength = dbState.resources.length;
+  dbState.resources = dbState.resources.filter(
+    (resource) => resource.id !== id,
+  );
+
+  const deleted = dbState.resources.length < initialLength;
+
+  if (!deleted) {
+    return false;
   }
-  return dbState.repositories;
+
+  dbState.chunks = dbState.chunks.filter((chunk) => chunk.resource_id !== id);
+  await persistDatabase();
+
+  return true;
 }
 
-export function addRepository(repo: Omit<Repository, 'id' | 'created_at' | 'updated_at'>): Repository {
-  const newRepo: Repository = {
-    ...repo,
-    id: `repo-${Date.now()}`,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+export async function getRepositories(
+  projectId?: string,
+): Promise<Repository[]> {
+  await refreshDatabase();
+
+  const repositories = projectId
+    ? dbState.repositories.filter(
+        (repository) => repository.project_id === projectId,
+      )
+    : dbState.repositories;
+
+  return copyValue(repositories);
+}
+
+export async function addRepository(
+  repository: Omit<Repository, "id" | "created_at" | "updated_at">,
+): Promise<Repository> {
+  await refreshDatabase();
+
+  const now = new Date().toISOString();
+  const newRepository: Repository = {
+    ...repository,
+    id: `repo-${randomUUID()}`,
+    created_at: now,
+    updated_at: now,
   };
-  dbState.repositories.push(newRepo);
-  saveDB();
-  return newRepo;
+
+  dbState.repositories.push(newRepository);
+  await persistDatabase();
+
+  return copyValue(newRepository);
 }
 
-export function deleteRepository(id: string): boolean {
-  const repo = dbState.repositories.find((r) => r.id === id);
-  const len = dbState.repositories.length;
-  dbState.repositories = dbState.repositories.filter((r) => r.id !== id);
-  if (repo) {
-    const repoNameLower = repo.name.toLowerCase();
-    dbState.resources = dbState.resources.filter(
-      (res) => !res.name.toLowerCase().includes(repoNameLower) && !res.category.toLowerCase().includes(repoNameLower)
+export async function deleteRepository(id: string): Promise<boolean> {
+  await refreshDatabase();
+
+  const repository = dbState.repositories.find((item) => item.id === id);
+
+  if (!repository) {
+    return false;
+  }
+
+  dbState.repositories = dbState.repositories.filter(
+    (item) => item.id !== id,
+  );
+
+  const repositoryName = repository.name.toLowerCase();
+
+  dbState.resources = dbState.resources.filter((resource) => {
+    const name = resource.name?.toLowerCase() || "";
+    const category = resource.category?.toLowerCase() || "";
+    return !name.includes(repositoryName) && !category.includes(repositoryName);
+  });
+
+  dbState.chunks = dbState.chunks.filter((chunk) => {
+    const filePath = chunk.file_path?.toLowerCase() || "";
+    const fileName = chunk.file_name?.toLowerCase() || "";
+    return (
+      !filePath.includes(repositoryName) &&
+      !fileName.includes(repositoryName)
     );
-    dbState.chunks = dbState.chunks.filter(
-      (c) => !c.file_path.toLowerCase().includes(repoNameLower) && !c.file_name.toLowerCase().includes(repoNameLower)
-    );
-  }
-  saveDB();
-  return dbState.repositories.length < len;
+  });
+
+  await persistDatabase();
+  return true;
 }
 
-export function getIncidents(projectId?: string): Incident[] {
-  if (projectId) {
-    return dbState.incidents.filter((i) => i.project_id === projectId);
-  }
-  return dbState.incidents;
+export async function getIncidents(projectId?: string): Promise<Incident[]> {
+  await refreshDatabase();
+
+  const incidents = projectId
+    ? dbState.incidents.filter((incident) => incident.project_id === projectId)
+    : dbState.incidents;
+
+  return copyValue(incidents);
 }
 
-export function addIncident(inc: Omit<Incident, 'id' | 'created_at'>): Incident {
-  const newInc: Incident = {
-    ...inc,
-    id: `inc-${Date.now()}`,
+export async function addIncident(
+  incident: Omit<Incident, "id" | "created_at">,
+): Promise<Incident> {
+  await refreshDatabase();
+
+  const newIncident: Incident = {
+    ...incident,
+    id: `inc-${randomUUID()}`,
     created_at: new Date().toISOString(),
   };
-  dbState.incidents.push(newInc);
-  saveDB();
-  return newInc;
+
+  dbState.incidents.push(newIncident);
+  await persistDatabase();
+
+  return copyValue(newIncident);
 }
 
-export function deleteIncident(id: string): boolean {
-  const len = dbState.incidents.length;
-  dbState.incidents = dbState.incidents.filter((i) => i.id !== id);
-  saveDB();
-  return dbState.incidents.length < len;
-}
+export async function deleteIncident(id: string): Promise<boolean> {
+  await refreshDatabase();
 
-export function getDiagrams(projectId?: string): ArchitectureDiagram[] {
-  if (projectId) {
-    return dbState.diagrams.filter((d) => d.project_id === projectId);
+  const initialLength = dbState.incidents.length;
+  dbState.incidents = dbState.incidents.filter(
+    (incident) => incident.id !== id,
+  );
+
+  const deleted = dbState.incidents.length < initialLength;
+
+  if (deleted) {
+    await persistDatabase();
   }
-  return dbState.diagrams;
+
+  return deleted;
 }
 
-export function addDiagram(diag: Omit<ArchitectureDiagram, 'id' | 'created_at'>): ArchitectureDiagram {
-  const newDiag: ArchitectureDiagram = {
-    ...diag,
-    id: `diag-${Date.now()}`,
+export async function getDiagrams(
+  projectId?: string,
+): Promise<ArchitectureDiagram[]> {
+  await refreshDatabase();
+
+  const diagrams = projectId
+    ? dbState.diagrams.filter((diagram) => diagram.project_id === projectId)
+    : dbState.diagrams;
+
+  return copyValue(diagrams);
+}
+
+export async function addDiagram(
+  diagram: Omit<ArchitectureDiagram, "id" | "created_at">,
+): Promise<ArchitectureDiagram> {
+  await refreshDatabase();
+
+  const newDiagram: ArchitectureDiagram = {
+    ...diagram,
+    id: `diag-${randomUUID()}`,
     created_at: new Date().toISOString(),
   };
-  dbState.diagrams.push(newDiag);
-  saveDB();
-  return newDiag;
+
+  dbState.diagrams.push(newDiagram);
+  await persistDatabase();
+
+  return copyValue(newDiagram);
 }
 
-export function getChatSessions(projectId?: string): ChatSession[] {
-  if (projectId) {
-    return dbState.chatSessions.filter((s) => s.project_id === projectId);
-  }
-  return dbState.chatSessions;
+export async function getChatSessions(
+  projectId?: string,
+): Promise<ChatSession[]> {
+  await refreshDatabase();
+
+  const sessions = projectId
+    ? dbState.chatSessions.filter((session) => session.project_id === projectId)
+    : dbState.chatSessions;
+
+  return copyValue(sessions);
 }
 
-export function getChatSessionById(id: string): ChatSession | undefined {
-  return dbState.chatSessions.find((s) => s.id === id);
+export async function getChatSessionById(
+  id: string,
+): Promise<ChatSession | undefined> {
+  await refreshDatabase();
+  const session = dbState.chatSessions.find((item) => item.id === id);
+  return session ? copyValue(session) : undefined;
 }
 
-export function createChatSession(projectId: string, title?: string): ChatSession {
+export async function createChatSession(
+  projectId: string,
+  title?: string,
+): Promise<ChatSession> {
+  await refreshDatabase();
+
+  const now = new Date().toISOString();
   const newSession: ChatSession = {
-    id: `session-${Date.now()}`,
+    id: `session-${randomUUID()}`,
     project_id: projectId,
-    title: title || 'New Conversation',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    title: title || "New Conversation",
+    created_at: now,
+    updated_at: now,
     messages: [],
   };
+
   dbState.chatSessions.unshift(newSession);
-  saveDB();
-  return newSession;
+  await persistDatabase();
+
+  return copyValue(newSession);
 }
 
-export function addChatMessage(sessionId: string, message: Omit<ChatMessage, 'id' | 'created_at'>): ChatMessage {
-  let session = dbState.chatSessions.find((s) => s.id === sessionId);
-  if (!session) {
-    session = createChatSession('proj-ecommerce-001', message.content.slice(0, 30) + '...');
-  }
-  if (!session.messages) session.messages = [];
+export async function addChatMessage(
+  sessionId: string,
+  message: Omit<ChatMessage, "id" | "created_at">,
+): Promise<ChatMessage> {
+  await refreshDatabase();
 
-  const newMsg: ChatMessage = {
+  let session = dbState.chatSessions.find((item) => item.id === sessionId);
+
+  if (!session) {
+    const now = new Date().toISOString();
+    const fallbackProjectId =
+      dbState.projects[0]?.id || DEFAULT_PROJECT.id || "proj-default";
+
+    session = {
+      id: sessionId || `session-${Date.now()}`,
+      project_id: fallbackProjectId,
+      title: `${message.content.slice(0, 30)}...`,
+      created_at: now,
+      updated_at: now,
+      messages: [],
+    };
+
+    dbState.chatSessions.unshift(session);
+  }
+
+  if (!session.messages) {
+    session.messages = [];
+  }
+
+  const newMessage: ChatMessage = {
     ...message,
-    id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+    session_id: session.id,
+    id: `msg-${randomUUID()}`,
     created_at: new Date().toISOString(),
   };
 
-  session.messages.push(newMsg);
+  session.messages.push(newMessage);
   session.updated_at = new Date().toISOString();
-  if (session.messages.length === 1 && message.role === 'user') {
-    session.title = message.content.slice(0, 40) + (message.content.length > 40 ? '...' : '');
+
+  if (session.messages.length === 1 && message.role === "user") {
+    session.title =
+      message.content.slice(0, 40) +
+      (message.content.length > 40 ? "..." : "");
   }
-  saveDB();
-  return newMsg;
+
+  await persistDatabase();
+  return copyValue(newMessage);
 }
 
-export function deleteChatSession(id: string): boolean {
-  const len = dbState.chatSessions.length;
-  dbState.chatSessions = dbState.chatSessions.filter((s) => s.id !== id);
-  saveDB();
-  return dbState.chatSessions.length < len;
+export async function deleteChatSession(id: string): Promise<boolean> {
+  await refreshDatabase();
+
+  const initialLength = dbState.chatSessions.length;
+  dbState.chatSessions = dbState.chatSessions.filter(
+    (session) => session.id !== id,
+  );
+
+  const deleted = dbState.chatSessions.length < initialLength;
+
+  if (deleted) {
+    await persistDatabase();
+  }
+
+  return deleted;
 }
 
-export function addChunks(chunks: VectorChunk[]) {
+export async function addChunks(chunks: VectorChunk[]): Promise<void> {
+  await refreshDatabase();
   dbState.chunks.push(...chunks);
-  saveDB();
+  await persistDatabase();
 }
 
-export function getChunks(projectId?: string): VectorChunk[] {
-  if (projectId) {
-    return dbState.chunks.filter((c) => c.project_id === projectId);
-  }
-  return dbState.chunks;
+export async function getChunks(projectId?: string): Promise<VectorChunk[]> {
+  await refreshDatabase();
+
+  const chunks = projectId
+    ? dbState.chunks.filter((chunk) => chunk.project_id === projectId)
+    : dbState.chunks;
+
+  return copyValue(chunks);
 }
 
-export function getSettings(): RAGSettings {
-  return dbState.settings;
+export async function getSettings(): Promise<RAGSettings> {
+  await refreshDatabase();
+  return copyValue(dbState.settings);
 }
 
-export function updateSettings(newSettings: Partial<RAGSettings>): RAGSettings {
-  dbState.settings = { ...dbState.settings, ...newSettings };
-  saveDB();
-  return dbState.settings;
+export async function updateSettings(
+  newSettings: Partial<RAGSettings>,
+): Promise<RAGSettings> {
+  await refreshDatabase();
+
+  dbState.settings = {
+    ...dbState.settings,
+    ...newSettings,
+  };
+
+  await persistDatabase();
+  return copyValue(dbState.settings);
 }
